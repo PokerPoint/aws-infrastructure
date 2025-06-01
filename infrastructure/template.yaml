@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AccountInfrastructure Stack
+Transform: [AWS::LanguageExtensions, AWS::Serverless-2016-10-31]
+
+Resources:
+  GitHubOIDC:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+
+  GithubActionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: github-actions-role
+      Description: GitHub post-merge role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "token.actions.githubusercontent.com:aud": sts.amazonaws.com
+              StringLike:
+                "token.actions.githubusercontent.com:sub":
+                  - !Sub repo:PokerPoint/pokerpoint-backend:environment:development*
+                  - !Sub repo:PokerPoint/pokerpoint-backend:environment:staging*
+                  - !Sub repo:PokerPoint/pokerpoint-backend:environment:production*
+                  - !Sub repo:PokerPoint/pokerpoint-frontend:environment:development*
+                  - !Sub repo:PokerPoint/pokerpoint-frontend:environment:staging*
+                  - !Sub repo:PokerPoint/pokerpoint-frontend:environment:production*
+                  - !Sub repo:PokerPoint/aws-dns:environment:development*
+                  - !Sub repo:PokerPoint/aws-dns:environment:staging*
+                  - !Sub repo:PokerPoint/aws-dns:environment:production*
+                  - !Sub repo:PokerPoint/aws-infrastructure:environment:development*
+                  - !Sub repo:PokerPoint/aws-infrastructure:environment:staging*
+                  - !Sub repo:PokerPoint/aws-infrastructure:environment:production*
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+  CloudWatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+
+  Account:
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn: !GetAtt CloudWatchRole.Arn
+
+Outputs:
+  GithubActionPostMergeRoleArn:
+    Description: GitHub Actions role ARN
+    Value: !GetAtt GithubActionRole.Arn
